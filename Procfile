@@ -1,2 +1,2 @@
-prepare: ./target/release/diesel migration run
+release: ./target/release/diesel migration run
 web: ./target/release/linker
