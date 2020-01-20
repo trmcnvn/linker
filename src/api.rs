@@ -1,52 +1,68 @@
-use crate::db;
-use actix_web::{error, get, http, post, web, Error, HttpResponse, Result};
-use serde_derive::Deserialize;
+use crate::db::Firestore;
+use crate::models::{CreateLink, Link};
+use rocket::{
+    catch, get, post,
+    response::{status, Redirect},
+    Request, State,
+};
+use rocket_contrib::json::Json;
+use std::time::SystemTime;
 
 #[get("/")]
-pub async fn index() -> &'static str {
-    "Hello, World!\r\n"
+pub fn hello() -> &'static str {
+    "Hello, World!"
 }
 
-#[derive(Deserialize)]
-pub struct CreateLink {
-    external_url: String,
-}
+#[post("/", format = "json", data = "<link>")]
+pub fn create(
+    link: Json<CreateLink>,
+    db: State<Firestore>,
+) -> Result<Json<Link>, status::BadRequest<&'static str>> {
+    if link.0.external_url.is_empty() {
+        return Err(status::BadRequest(Some(
+            "You must provide the `external_url` value.",
+        )));
+    }
 
-#[post("/")]
-pub async fn create(
-    params: web::Json<CreateLink>,
-    pool: web::Data<db::PgPool>,
-) -> Result<HttpResponse, Error> {
-    if params.external_url.is_empty() {
-        Err(error::ErrorBadRequest("You must provide an external_url."))
-    } else {
-        match web::block(move || db::create_link(params.into_inner().external_url, &pool)).await {
-            Ok(link) => Ok(HttpResponse::Ok().json(link)),
-            Err(err) => Err(error::ErrorInternalServerError(err)),
-        }
+    let short_id = Link::generate_id(link.0.external_url.clone());
+    let new_link = Link {
+        external_url: link.0.external_url,
+        short_id: short_id.clone(),
+        created_at: SystemTime::now(),
+    };
+
+    match db.find("links", "short_id", short_id) {
+        Ok(link) => Ok(Json(link)),
+        Err(_) => match db.insert("links", &new_link) {
+            Ok(_) => Ok(Json(new_link)),
+            Err(_) => Err(status::BadRequest(Some("Sorry, the link wasn't created."))),
+        },
     }
 }
 
-#[get("/{id}")]
-pub async fn follow(
-    params: web::Path<String>,
-    pool: web::Data<db::PgPool>,
-) -> Result<HttpResponse, Error> {
-    match web::block(move || db::find_by_short(params.into_inner(), &pool)).await {
-        Ok(link) => Ok(HttpResponse::Found()
-            .header(http::header::LOCATION, link.external_url)
-            .finish()),
-        Err(err) => Err(error::ErrorNotFound(err)),
-    }
+#[get("/<id>")]
+pub fn follow(
+    id: String,
+    db: State<Firestore>,
+) -> Result<Redirect, status::NotFound<&'static str>> {
+    let link: Link = db
+        .find("links", "short_id", id)
+        .map_err(|_| status::NotFound("Sorry, that link doesn't exist."))?;
+    Ok(Redirect::to(link.external_url))
 }
 
-#[get("/{id}/preview")]
-pub async fn preview(
-    params: web::Path<String>,
-    pool: web::Data<db::PgPool>,
-) -> Result<HttpResponse, Error> {
-    match web::block(move || db::find_by_short(params.into_inner(), &pool)).await {
-        Ok(link) => Ok(HttpResponse::Ok().json(link)),
-        Err(err) => Err(error::ErrorNotFound(err)),
-    }
+#[get("/<id>/preview")]
+pub fn preview(
+    id: String,
+    db: State<Firestore>,
+) -> Result<Json<Link>, status::NotFound<&'static str>> {
+    let link = db
+        .find("links", "short_id", id)
+        .map_err(|_| status::NotFound("Sorry, that link doesn't exist."))?;
+    Ok(Json(link))
+}
+
+#[catch(404)]
+pub fn not_found(req: &Request) -> String {
+    format!("Sorry, {} is not a valid path.", req.uri())
 }
