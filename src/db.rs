@@ -2,6 +2,7 @@ use firestore_db_and_auth::{documents, dto, Credentials, ServiceSession};
 use once_cell::sync::OnceCell;
 use std::sync::{Arc, Mutex};
 
+#[derive(Clone)]
 pub struct Firestore {
     credentials: Credentials,
     session: OnceCell<Arc<Mutex<ServiceSession>>>,
@@ -49,6 +50,25 @@ impl Firestore {
             documents::WriteOptions::default(),
         )?;
         Ok(result.document_id)
+    }
+
+    pub fn find_or_insert<T>(
+        &self,
+        collection: &str,
+        field: &str,
+        query: String,
+        document: &T,
+    ) -> anyhow::Result<T>
+    where
+        T: serde::Serialize + for<'b> serde::Deserialize<'b> + Clone,
+    {
+        match self.find(collection, field, query) {
+            Ok(link) => Ok(link),
+            Err(_) => match self.insert(collection, document) {
+                Ok(_) => Ok(document.clone()),
+                Err(_) => Err(anyhow::anyhow!("Failed to insert")),
+            },
+        }
     }
 
     fn get_session(&self) -> anyhow::Result<Arc<Mutex<ServiceSession>>> {

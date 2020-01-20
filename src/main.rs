@@ -1,17 +1,20 @@
-#![feature(proc_macro_hygiene, decl_macro)]
-
+use actix_web::{middleware, web, App, HttpServer};
 use firestore_db_and_auth::Credentials;
-use rocket::{
-    catchers,
-    config::{Config, Environment},
-    routes,
-};
+use std::env;
 
 mod api;
 mod db;
 mod models;
 
-fn main() {
+#[actix_rt::main]
+async fn main() -> anyhow::Result<()> {
+    // logging
+    match env::var("RUST_LOG") {
+        Ok(_) => {}
+        Err(_) => env::set_var("RUST_LOG", "main,actix_web"),
+    };
+    env_logger::init();
+
     // database
     let credentials = Credentials::new(
         include_str!("../auth/gcloud-credentials.json"),
@@ -19,31 +22,26 @@ fn main() {
             include_str!("../auth/securetoken.jwk"),
             include_str!("../auth/service-account.jwk"),
         ],
-    )
-    .expect("Read Google credentials file");
+    )?;
     let db = db::Firestore::new(credentials);
 
-    // web config
-    let config = Config::build(Environment::active().expect("ROCKET_ENV to be valid"))
-        .address("0.0.0.0")
-        .port(
-            std::env::var("PORT")
-                .unwrap_or_else(|_| String::from("8080"))
-                .parse()
-                .unwrap(),
-        )
-        .keep_alive(0)
-        .workers(4)
-        .finalize()
-        .expect("Config to be valid");
-
     // web
-    rocket::custom(config)
-        .manage(db)
-        .mount(
-            "/",
-            routes![api::hello, api::create, api::follow, api::preview],
-        )
-        .register(catchers![api::not_found])
-        .launch();
+    HttpServer::new(move || {
+        App::new()
+            .data(db.clone())
+            .data(web::JsonConfig::default().limit(512))
+            .wrap(middleware::Logger::default())
+            .service(api::hello)
+            .service(api::create)
+            .service(api::follow)
+            .service(api::preview)
+    })
+    .bind(format!(
+        "0.0.0.0:{}",
+        env::var("PORT").unwrap_or_else(|_| String::from("8080"))
+    ))?
+    .workers(1)
+    .run()
+    .await
+    .map_err(|err| anyhow::anyhow!(err))
 }
