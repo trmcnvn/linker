@@ -1,42 +1,25 @@
-#[macro_use]
-extern crate diesel;
+#![feature(proc_macro_hygiene, decl_macro)]
 
-use actix_web::{middleware, web, App, HttpServer};
-use dotenv::dotenv;
-use std::env;
+use firestore_db_and_auth::Credentials;
+use rocket::{catchers, routes};
 
 mod api;
 mod db;
-mod model;
-mod schema;
+mod models;
 
-#[actix_rt::main]
-async fn main() -> std::io::Result<()> {
-    match env::var("RUST_LOG") {
-        Ok(_) => {}
-        Err(_) => env::set_var("RUST_LOG", "actix_web=info"),
-    };
-    env_logger::init();
-    dotenv().ok();
+fn main() {
+    // database
+    let credentials =
+        Credentials::from_file("gcloud-credentials.json").expect("Read Google credentials file");
+    let db = db::Firestore::new(credentials);
 
-    let database_url = env::var("DATABASE_URL").expect("DATABASE_URL to be set");
-    let pool = db::init_pool(&database_url).expect("Failed to create database connection pool");
-
-    HttpServer::new(move || {
-        App::new()
-            .data(pool.clone())
-            .data(web::JsonConfig::default().limit(512))
-            .wrap(middleware::Logger::default())
-            .service(api::index)
-            .service(api::create)
-            .service(api::follow)
-            .service(api::preview)
-    })
-    .bind(format!(
-        "{}:{}",
-        env::var("HOST").expect("HOST to be set"),
-        env::var("PORT").expect("PORT to be set")
-    ))?
-    .start()
-    .await
+    // web
+    rocket::ignite()
+        .manage(db)
+        .mount(
+            "/",
+            routes![api::hello, api::create, api::follow, api::preview],
+        )
+        .register(catchers![api::not_found])
+        .launch();
 }
