@@ -13,9 +13,5 @@ FROM centos:8
 
 COPY --from=BUILD /target/release/linker /usr/local/bin/
 
-ENV ROCKET_ENV=production
-ENV ROCKET_PORT=$PORT
-
 WORKDIR /root
-CMD ["/usr/local/bin/linker"]
-ENTRYPOINT ["sh", "-c"]
+ENTRYPOINT ["/usr/local/bin/linker"]
