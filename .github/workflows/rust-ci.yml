@@ -12,7 +12,7 @@ jobs:
           profile: minimal
           toolchain: stable
           override: true
-          components: [rustfmt, clippy]
+          components: rustfmt, clippy
 
       # make sure all code has been formatted with rustfmt
       - name: check rustfmt
