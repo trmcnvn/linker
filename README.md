@@ -1,6 +1,6 @@
 # 🔗 Linker
 
-Experimenting with a Link API service in Rust/Actix.
+Link shortner in Rust
 
 ## License
 
