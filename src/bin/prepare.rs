@@ -8,7 +8,8 @@ mod embedded {
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let database_url = env::var("DATABASE_URL")?;
-    let (mut client, connection) = tokio_postgres::connect(&database_url, tokio_postgres::NoTls).await?;
+    let (mut client, connection) =
+        tokio_postgres::connect(&database_url, tokio_postgres::NoTls).await?;
 
     tokio::spawn(async move {
         if let Err(e) = connection.await {
@@ -16,7 +17,9 @@ async fn main() -> anyhow::Result<()> {
         }
     });
 
-    embedded::migrations::runner().run_async(&mut client).await?;
+    embedded::migrations::runner()
+        .run_async(&mut client)
+        .await?;
 
     Ok(())
 }
