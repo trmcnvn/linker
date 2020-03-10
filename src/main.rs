@@ -1,47 +1,33 @@
-use actix_web::{middleware, web, App, HttpServer};
-use firestore_db_and_auth::Credentials;
+use crate::database::Database;
 use std::env;
+use warp::Filter;
 
-mod api;
-mod db;
+mod database;
+mod handlers;
 mod models;
+mod routes;
 
-#[actix_rt::main]
+#[tokio::main]
 async fn main() -> anyhow::Result<()> {
     // logging
-    match env::var("RUST_LOG") {
-        Ok(_) => {}
-        Err(_) => env::set_var("RUST_LOG", "main,actix_web"),
-    };
-    env_logger::init();
+    if env::var_os("RUST_LOG").is_none() {
+        env::set_var("RUST_LOG", "linker=info");
+    }
+    pretty_env_logger::init();
 
     // database
-    let credentials = Credentials::new(
-        include_str!("../auth/gcloud-credentials.json"),
-        &[
-            include_str!("../auth/securetoken.jwk"),
-            include_str!("../auth/service-account.jwk"),
-        ],
-    )?;
-    let db = db::Firestore::new(credentials);
+    let database_url = env::var("DATABASE_URL")?;
+    let database = Database::new(&database_url)?;
 
-    // web
-    HttpServer::new(move || {
-        App::new()
-            .data(db.clone())
-            .data(web::JsonConfig::default().limit(512))
-            .wrap(middleware::Logger::default())
-            .service(api::hello)
-            .service(api::create)
-            .service(api::follow)
-            .service(api::preview)
-    })
-    .bind(format!(
-        "0.0.0.0:{}",
-        env::var("PORT").unwrap_or_else(|_| String::from("8080"))
-    ))?
-    .workers(1)
-    .run()
-    .await
-    .map_err(|err| anyhow::anyhow!(err))
+    // routes
+    let routes = routes::routes(database).with(warp::log("linker"));
+
+    // server
+    warp::serve(routes)
+        .run((
+            [0, 0, 0, 0],
+            env::var("PORT").map_or(3030, |p| p.parse::<u16>().unwrap_or(3030)),
+        ))
+        .await;
+    Ok(())
 }
