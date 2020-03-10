@@ -37,10 +37,9 @@ pub async fn create(
 /// GET /{id}
 pub async fn follow(id: String, db: Database) -> anyhow::Result<Box<dyn Reply>, Infallible> {
     match db.find(&id).await {
-        Ok(link) => Ok(Box::new(warp::reply::with_header(
-            warp::reply(),
-            "Location",
-            link.external_url,
+        Ok(link) => Ok(Box::new(warp::reply::with_status(
+            warp::reply::with_header(warp::reply(), "Location", link.external_url),
+            StatusCode::FOUND,
         ))),
         Err(_) => Ok(Box::new(StatusCode::NOT_FOUND)),
     }
